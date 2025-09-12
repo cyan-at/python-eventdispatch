@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# cd eventdispatch/python3/eventdispatch/
+# run in this directory
 
 # update
 # pyproject.toml
