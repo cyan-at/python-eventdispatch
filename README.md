@@ -1,1 +1,1 @@
-../README.md
+This is a mirror for the Python Debian Team of the [upstream repo](https://github.com/cyan-at/eventdispatch)
