@@ -2,9 +2,9 @@ from setuptools import setup, find_packages
 
 setup(
     name='eventdispatch',
-    version='0.2.3',
+    version='0.2.4',
     description='Event Dispatch, a discrete time synchronizer',
-    url='http://github.com/cyan-at/eventdispatch',
+    url='http://github.com/cyan-at/python-eventdispatch',
     author='Charlie Yan',
     author_email='cyanatg@gmail.com',
     license='Apache-2.0',

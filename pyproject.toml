@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "eventdispatch"
-version = "0.2.3"
+version = "0.2.4"
 authors = [{name = "Charlie Yan", email = "cyanatg@gmail.com"}]
 dynamic = ["scripts", "dependencies"]
 description = "Event Dispatch: discrete time synchronization"
@@ -29,5 +29,5 @@ keywords = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/cyan-at/eventdispatch"
-Issues = "https://github.com/cyan-at/eventdispatch/issues"
+Homepage = "https://github.com/cyan-at/python-eventdispatch"
+Issues = "https://github.com/cyan-at/python-eventdispatch/issues"
