@@ -3,7 +3,7 @@ Event Dispatch: discrete time synchronization, Markov control
 
 ## Documentation
 
-The latest documentation on <a href="https://eventdispatch.readthedocs.io/en/latest/" target="_blank">readthedocs</a>
+The latest documentation on <a href="https://python-eventdispatch.readthedocs.io/en/latest/" target="_blank">readthedocs</a>
 
 ## python3: apt installation
 ```
