@@ -1,3 +1,9 @@
+python-eventdispatch (0.2.5) UNRELEASED; urgency=low
+
+  Trim trailing whitespace.
+
+ -- Charlie Yan <cyanatg@gmail.com>  Sat, 27 Sep 2025 14:52:26 +0000
+
 python-eventdispatch (0.2.4) noble; urgency=medium
 
   * clean changelog
@@ -9,4 +15,3 @@ python-eventdispatch (0.2.3) noble; urgency=medium
   * clean changelog
 
  -- Charlie Yan <charlieyan08@gmail.com>  Sat, 27 Sep 2025 06:34:33 -0700
-
