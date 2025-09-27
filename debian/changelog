@@ -2,6 +2,7 @@ python-eventdispatch (0.2.5) UNRELEASED; urgency=low
 
   Trim trailing whitespace.
   Strip unusual field spacing from debian/control.
+  Add missing ${misc:Depends} to Depends for python-eventdispatch.
 
  -- Charlie Yan <cyanatg@gmail.com>  Sat, 27 Sep 2025 14:52:26 +0000
 
