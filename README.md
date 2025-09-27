@@ -1,4 +1,4 @@
-# <a href="https://github.com/cyan-at/python-eventdispatch" target="_blank">eventdispatch</a>
+# <a href="https://github.com/cyan-at/python-eventdispatch" target="_blank">python-eventdispatch</a>
 Event Dispatch: discrete time synchronization, Markov control
 
 ## Documentation
