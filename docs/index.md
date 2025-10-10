@@ -1,4 +1,4 @@
-# [python-eventdispatch](https://github.com/cyan-at/eventdispatch)
+# [python-eventdispatch](https://github.com/cyan-at/python-eventdispatch)
 
 **eventdispatch** is a Python package for solving the *discrete time synchronization problem* in any computer system. It consists of:
 
@@ -28,6 +28,16 @@
 
 ---
 
+Try it yourself!
+
+```bash
+virtualenv try-eventdispatch
+. try-eventdispatch/bin/activate
+pip install eventdispatch
+```
+
+---
+
 * EventDispatch is based on the idea that **what happens defines what happens *next***. Independently derived, the idea is a mirror of <a href="https://en.wikipedia.org/wiki/Markov_chain">Markov chains</a>.
     * EventDispatch frames *all computer programs as <a href="https://en.wikipedia.org/wiki/Kolmogorov%E2%80%93Arnold_representation_theorem">superpositioned</a> Markov processes*.
     * Control is about *inducing* and then *injecting synthetic steering* into **superpositioned Markov transitions**.
@@ -45,7 +55,7 @@
 
 The **EventDispatch** mechanism can be extended to a variety of *messaging mechanisms* in their respective packages, their documentations listed here:
 
-1. [ROS2](https://eventdispatch-ros2.readthedocs.io/en/latest/)
+1. ROS2 (WIP)
 
 ---
 
