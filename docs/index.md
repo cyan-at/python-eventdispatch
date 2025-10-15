@@ -28,7 +28,7 @@
 
 ---
 
-Try it yourself!
+<a href="https://pypi.org/project/eventdispatch/#files" target="_blank">Try it yourself!</a>
 
 ```bash
 virtualenv try-eventdispatch
