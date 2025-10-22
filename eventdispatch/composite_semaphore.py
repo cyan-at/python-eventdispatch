@@ -151,7 +151,7 @@ class CompositeSemaphore(object):
                 mutable_shared,
                 threading.Semaphore(1)
             )
-            self.semaphores[identifier][1].acquire()
+            # self.semaphores[identifier][1].acquire()
 
         self.semaphores[identifier][1].acquire()
 
@@ -266,7 +266,7 @@ class CSWait(CommonEvent):
         int(s), signals
 
         args[1]:
-        ignore
+        unique identifier for this CSWait (requester)
 
         args[2:]
         arguments for waiting event
@@ -398,6 +398,12 @@ class CSWait(CommonEvent):
         self.log("CSWait done!")
 
 class CSRelease(CommonEvent):
+    '''
+    example:
+    ["CSRelease", "0,1,2", 0, 0]
+    the last 2 indices don't really matter
+    '''
+
     debug_color = bcolors.MAGENTA
 
     def get_release_status(self, args):
@@ -505,7 +511,7 @@ class CSBQCVED(BlackboardQueueCVED):
         blackboard[self.queue_name] = non_cs_instances
 
         if len(cs_instances) == 0:
-            self.log("prior_cb DONE!!!!")
+            # self.log("prior_cb DONE!!!!")
             return
 
         for cs_instance in cs_instances:

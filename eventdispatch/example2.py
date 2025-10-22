@@ -129,6 +129,8 @@ class KeyboardThread2(KeyboardThread):
             unique_letters = set(list(blocks[0]))
             unique_numbers = set(list(blocks[1]))
 
+            k = ",".join([str(x) for x in unique_letters])
+
             blackboard[ed1.cv_name].acquire()
             blackboard[ed1.queue_name].extend(
                 # every number on the right waits for every letter on the left
@@ -148,7 +150,8 @@ class KeyboardThread2(KeyboardThread):
                 ] + [
                     [
                         "CSWait",
-                        ",".join([str(x) for x in unique_letters]),
+                        k,
+                        k,
 
                         "CSRelease",
                         ",".join([str(x) for x in unique_numbers]),
@@ -162,12 +165,15 @@ class KeyboardThread2(KeyboardThread):
         else:
             unique = set(list(blocks[0]))
 
+            k = ",".join([str(x) for x in unique])
+
             blackboard[ed1.cv_name].acquire()
             blackboard[ed1.queue_name].extend(
                 [
                     [
                         "CSWait",
-                        ",".join([str(x) for x in unique]),
+                        k,
+                        k,
 
                         "PrintReleaseEvent",
                         x
