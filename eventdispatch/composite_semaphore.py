@@ -332,7 +332,7 @@ class CSWait(CommonEvent):
 
         self.prior_cb(args)
 
-        self.instance = args[2:]
+        self.instance = args[1]
 
         self.log("{} cs init + acquiring".format(
             identifier))
