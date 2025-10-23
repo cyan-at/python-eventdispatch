@@ -150,9 +150,9 @@ class KeyboardThread2(KeyboardThread):
                 ] + [
                     [
                         "CSWait",
-                        k,
-                        k,
+                        k, # the left is *all letters*
 
+                        k, # the right is *all the letters*
                         "CSRelease",
                         ",".join([str(x) for x in unique_numbers]),
                         "",
@@ -162,28 +162,39 @@ class KeyboardThread2(KeyboardThread):
             )
             blackboard[ed1.cv_name].notify(1)
             blackboard[ed1.cv_name].release()
-        else:
-            unique = set(list(blocks[0]))
+        else: # is numeric
+            unique_numbers = set(list(blocks[0]))
+            unique_letters = set(list(blocks[1]))
 
-            k = ",".join([str(x) for x in unique])
+            k = ",".join([str(x) for x in unique_numbers])
 
             blackboard[ed1.cv_name].acquire()
             blackboard[ed1.queue_name].extend(
                 [
                     [
                         "CSWait",
-                        k,
-                        k,
+                        k, # the left is *all the numbers*
 
+                        x, # the right one letter per unique_letter
                         "PrintReleaseEvent",
                         x
-                    ] for x in blocks[1]
+                    ] for x in unique_letters
                 ])
             blackboard[ed1.cv_name].notify(1)
             blackboard[ed1.cv_name].release()
 
         return True
 
+def noop(instance, *args):
+    pass
+
+class QuietCSWait(CSWait):
+    def internal_log(self, *args):
+        pass
+
+class QuietCSRelease(CSRelease):
+    def internal_log(self, *args):
+        pass
 
 def main():
     print("###################")
@@ -211,6 +222,13 @@ def main():
         blackboard,
         "ed1"
     )
+
+    # blackboard["CSWait"] = QuietCSWait
+    # blackboard["CSRelease"] = QuietCSRelease
+    # wrap_instance_method(ed1,
+    #     "internal_log",
+    #     replace_with_func(noop))
+
     blackboard["ed1"] = ed1
 
     # 3. Stand up their `run` targets as threads

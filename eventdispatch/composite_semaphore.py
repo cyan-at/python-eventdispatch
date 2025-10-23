@@ -151,7 +151,8 @@ class CompositeSemaphore(object):
                 mutable_shared,
                 threading.Semaphore(1)
             )
-            # self.semaphores[identifier][1].acquire()
+            self.semaphores[identifier][1].acquire()
+            # drain it, it must be re-released
 
         self.semaphores[identifier][1].acquire()
 
@@ -242,8 +243,8 @@ class CSWait(CommonEvent):
         '''
         override for your use case
         '''
-        self.log("args {}".format(args))
-        return list(args[1:])
+        self.internal_log("args {}".format(args))
+        return list(args[2:])
 
     def post_cb(self, args):
         '''
@@ -253,8 +254,12 @@ class CSWait(CommonEvent):
 
     @staticmethod
     def parse_lefts(s):
+        '''
+        identifier is just a serialization of tokens, not a new thing
+        '''
         tokens = sorted(list(set(s.split(","))))
 
+        # return tokens
         return tokens, ",".join(tokens)
 
     def dispatch(self, event_dispatch, *args, **kwargs):
@@ -274,13 +279,16 @@ class CSWait(CommonEvent):
         self.mutable_shared = {"status" : 0}
 
         ls, identifier = CSWait.parse_lefts(args[0])
+
+        # ls = CSWait.parse_lefts(args[0])
+        # identifier = args[1]
         # this must be consistent with dispatch and with CSRelease
 
         self.ls = ls
         self.identifier = identifier
 
         if len(ls) == 0:
-            self.log("no left cs keys!? bypassing")
+            self.internal_log("no left cs keys!? bypassing")
             self.mutable_shared["status"] = 2
             return
 
@@ -291,18 +299,18 @@ class CSWait(CommonEvent):
         # must be unique
         with self.blackboard["volatile"]["cs_registry_l"] and self.blackboard["volatile"]["cs_cv_l"]:
             if identifier in self.blackboard["volatile"]["cs_set"]: # implicit no-overlap (black/white matching TODO?)
-                self.log("cs exists")
+                self.internal_log("cs exists")
                 # self.mutable_shared["status"] = -1
                 self.cs = self.blackboard["volatile"]["cs_registry"][self.ls[0]]
             # elif len(set.intersection(
             #     set(self.blackboard["volatile"]["cs_registry"].keys()),
             #     # ids)) == 0:
             #     self.ls)) > 0:
-            #     self.log("left overlap caught, rejecting CSWait attempt")
+            #     self.internal_log("left overlap caught, rejecting CSWait attempt")
             #     self.exception = True
             #     return
             else:
-                self.log("making new cs")
+                self.internal_log("making new cs")
                 #######################
 
                 # self.blackboard["volatile"]["cs_set"].update(ls)
@@ -325,7 +333,7 @@ class CSWait(CommonEvent):
         with self.blackboard["volatile"]["cs_cv_l"]:
             self.blackboard["volatile"]["cs_cv"].notify_all()
 
-        self.log("{} cs_cv notified".format(
+        self.internal_log("{} cs_cv notified".format(
             self.blackboard["volatile"]["cs_set"]))
 
         #######################
@@ -334,7 +342,7 @@ class CSWait(CommonEvent):
 
         self.instance = args[1]
 
-        self.log("{} cs init + acquiring".format(
+        self.internal_log("{} cs init + acquiring".format(
             identifier))
 
         # this is the core mechanism
@@ -345,14 +353,14 @@ class CSWait(CommonEvent):
         )
 
     def cleanup(self):
-        self.log("cleaning up {}".format(self.ls))
+        self.internal_log("cleaning up {}".format(self.ls))
         with self.blackboard["volatile"]["cs_registry_l"] and self.blackboard["volatile"]["cs_cv_l"]:
             for l in self.ls:
                 if l in self.blackboard["volatile"]["cs_registry"]:
                     cs = self.blackboard["volatile"]["cs_registry"].pop(l)
                     del cs
 
-                # self.log("popping cs_set key {}".format(l))
+                # self.internal_log("popping cs_set key {}".format(l))
                 # self.blackboard["volatile"]["cs_set"].remove(
                 #     l)
 
@@ -364,24 +372,24 @@ class CSWait(CommonEvent):
                 self.blackboard["volatile"]["cs_set"].remove(
                     self.identifier)
 
-            self.log("after {}, cs_set {}".format(
+            self.internal_log("after {}, cs_set {}".format(
                 self.blackboard["volatile"]["cs_registry"].keys(),
                 self.blackboard["volatile"]["cs_set"])
             )
 
     def finish(self, event_dispatch, *args, **kwargs):
         # if self.exception:
-        #     self.log("noop")
+        #     self.internal_log("noop")
         #     return
 
         self.cleanup()
 
         if self.mutable_shared["status"] == -1:
-            self.log("CSWait noop")
+            self.internal_log("CSWait noop")
             return
 
         pending = self.get_pending(args)
-        self.log(
+        self.internal_log(
             "CSWait unblocking {} on {}".format(
             self.mutable_shared["status"],
             pending))
@@ -395,7 +403,7 @@ class CSWait(CommonEvent):
         self.blackboard[event_dispatch.cv_name].notify(1)
         self.blackboard[event_dispatch.cv_name].release()
 
-        self.log("CSWait done!")
+        self.internal_log("CSWait done!")
 
 class CSRelease(CommonEvent):
     '''
@@ -410,7 +418,7 @@ class CSRelease(CommonEvent):
         '''
         override for your use case
         '''
-        self.log("releasing on {}, {}".format(args[0], args[2]))
+        self.internal_log("releasing on {}, {}".format(args[0], args[2]))
         return int(args[2])
 
     def prior_cb(self, args):
@@ -418,7 +426,7 @@ class CSRelease(CommonEvent):
         override for your use case
         '''
         if len(args) != (2+1):
-            self.log("ARGS {}".format(len(args)))
+            self.internal_log("ARGS {}".format(len(args)))
             return False
 
         return True
@@ -429,6 +437,9 @@ class CSRelease(CommonEvent):
 
         ls, identifier = CSWait.parse_lefts(args[0])
 
+        # ls = CSWait.parse_lefts(args[0])
+        # identifier = args[1]
+
         with self.blackboard["volatile"]["cs_registry_l"]:
             for l in ls:
                 if l not in self.blackboard["volatile"]["cs_registry"]:
@@ -437,7 +448,7 @@ class CSRelease(CommonEvent):
                     l,
                     (self.instance, self.get_release_status(args)))
 
-        self.log("CSRelease dispatch done!")
+        self.internal_log("CSRelease dispatch done!")
 
     def finish(self, event_dispatch, *args, **kwargs):
         pass
@@ -472,15 +483,19 @@ class CSBQCVED(BlackboardQueueCVED):
         '''
         avoid overriding this
         '''
-        self.log("CSBQCVED: prior_cb")
+        self.internal_log("CSBQCVED: prior_cb")
 
         cs_instances = []
         expected_cs_ids = set()
         non_cs_instances = []
         for instance in blackboard[self.queue_name]:
             if instance[0] in ["CSWait"]: # CSRelease, we only demand open-the-mouth on CSWait, CSRelease we don't care
+                # ids = CSWait.parse_lefts(instance[1])
+                # identifier = instance[2]
+
                 ids, identifier = CSWait.parse_lefts(instance[1])
-                self.log("instance[1] {}, identifier: {}".format(instance[1], identifier))
+
+                self.internal_log("instance[1] {}, identifier: {}".format(instance[1], identifier))
 
                 # reject overlap at the dispatch level
                 # instead of in event
@@ -491,7 +506,7 @@ class CSBQCVED(BlackboardQueueCVED):
                         set(blackboard["volatile"]["cs_registry"].keys()),
                         # ids)) == 0:
                         ids)) > 0:
-                        self.log("left overlap caught, rejecting CSWait attempt")
+                        self.internal_log("left overlap caught, rejecting CSWait attempt")
                     else:
                         cs_instances.append(instance)
 
@@ -505,19 +520,19 @@ class CSBQCVED(BlackboardQueueCVED):
             else:
                 non_cs_instances.append(instance)
 
-        self.log("CS_INSTANCES {}!!!!!".format(cs_instances))
-        self.log("non_cs_instances {}!!!!!".format(non_cs_instances))
+        self.internal_log("CS_INSTANCES {}!!!!!".format(cs_instances))
+        self.internal_log("non_cs_instances {}!!!!!".format(non_cs_instances))
 
         blackboard[self.queue_name] = non_cs_instances
 
         if len(cs_instances) == 0:
-            # self.log("prior_cb DONE!!!!")
+            # self.internal_log("prior_cb DONE!!!!")
             return
 
         for cs_instance in cs_instances:
             self.do_dispatch(blackboard, cs_instance)
 
-        self.log("expected_cs_ids {}!!!!!".format(expected_cs_ids))
+        self.internal_log("expected_cs_ids {}!!!!!".format(expected_cs_ids))
         if len(expected_cs_ids) > 0:
             self.blackboard["volatile"]["cs_cv_l"].acquire()
             while len(set.intersection(
@@ -527,13 +542,13 @@ class CSBQCVED(BlackboardQueueCVED):
                 self.blackboard["volatile"]["cs_cv"].wait()
             self.blackboard["volatile"]["cs_cv_l"].release()
 
-        self.log("prior_cb DONE!!!!")
+        self.internal_log("prior_cb DONE!!!!")
 
     def post_cb(self, blackboard):
         '''
         override for your use case
         '''
-        self.log("POST_CB!")
+        self.internal_log("POST_CB!")
 
 def main():
     s = 4

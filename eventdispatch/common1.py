@@ -108,6 +108,13 @@ def wrap_with_prints(pre_msg, post_msg):
         return wrapper
     return decorator
 
+def replace_with_func(other_func):
+    def decorator(func):
+        def wrapper(*args, **kwargs):
+            other_func(*args, **kwargs)
+        return wrapper
+    return decorator
+
 class CommonEvent(Event):
     debug_color = bcolors.LIGHTCYAN
 
@@ -121,7 +128,13 @@ class CommonEvent(Event):
         wrap_instance_method(self, 'log',
             wrap_with_prints(self.debug_color, bcolors.ENDC))
 
+        wrap_instance_method(self, 'internal_log',
+            wrap_with_prints(self.debug_color, bcolors.ENDC))
+
     def log(self, *args):
+        print(*args)
+
+    def internal_log(self, *args):
         print(*args)
 
     @staticmethod
@@ -153,7 +166,7 @@ class BlackboardQueueCVED(EventDispatch):
         '''
         override for your use case
         '''
-        self.log("BlackboardQueueCVED: post_cb!!! {}".format(
+        self.internal_log("BlackboardQueueCVED: post_cb!!! {}".format(
             len(blackboard[self.queue_name])))
 
     def register_blackboard_assets(self, blackboard, name):
@@ -182,8 +195,11 @@ class BlackboardQueueCVED(EventDispatch):
             blackboard[self.queue_name] = []
         # assert(self.queue_name in blackboard)
 
-    def log(self, msg, params = None):
+    def internal_log(self, msg, params = None):
         print(msg)
+
+    def log(self, *args):
+        print(*args)
 
     def reserve_event_id(self):
         x = self.event_id_max
@@ -222,7 +238,7 @@ class BlackboardQueueCVED(EventDispatch):
                 *constructor_args),
                 *dispatch_args)
         except Exception as e:
-            self.log(self.ed_id
+            self.internal_log(self.ed_id
                 + " BlackboardQueueCVED: failed dispatch %s, exception %s" % (
                 str(serialized_class_args), str(e)))
             return False
@@ -237,6 +253,10 @@ class BlackboardQueueCVED(EventDispatch):
 
         if (debug_color is not None):
             wrap_instance_method(self, 'log',
+                wrap_with_prints(debug_color, bcolors.ENDC))
+            # [example] decorator
+
+            wrap_instance_method(self, 'internal_log',
                 wrap_with_prints(debug_color, bcolors.ENDC))
             # [example] decorator
 
@@ -258,7 +278,7 @@ class BlackboardQueueCVED(EventDispatch):
 
             # could be woken from shutdown procedure
             if len(blackboard[self.queue_name]) == 0:
-                self.log("BlackboardQueueCVED: woken from shutdown")
+                self.internal_log("BlackboardQueueCVED: woken from shutdown")
                 break
 
             ##### core ED logic, done while self.mutex_name is held ####
@@ -271,7 +291,7 @@ class BlackboardQueueCVED(EventDispatch):
                 serialized_class_args = blackboard[self.queue_name].pop(0)
 
                 if not self.do_dispatch(blackboard, serialized_class_args):
-                    self.log(self.name + " failed dispatching something: {}".format(
+                    self.internal_log(self.name + " failed dispatching something: {}".format(
                         serialized_class_args))
                     continue
 
@@ -285,12 +305,12 @@ class BlackboardQueueCVED(EventDispatch):
             if empty_cv_name is not None:
                 if len(blackboard[self.queue_name]) == 0 and\
                     empty_cv_name in blackboard:
-                    self.log("BlackboardQueueCVED: notifying " + empty_cv_name)
+                    self.internal_log("BlackboardQueueCVED: notifying " + empty_cv_name)
                     blackboard[empty_cv_name].acquire()
                     blackboard[empty_cv_name].notify_all()
                     blackboard[empty_cv_name].release()
 
-        self.log(self.name + " shutdown")
+        self.internal_log(self.name + " shutdown")
 
     def cleanup(self):
         pass
