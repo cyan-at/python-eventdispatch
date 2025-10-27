@@ -14,7 +14,7 @@ from .common1 import *
 # from core import *
 # from common1 import *
 
-import signal, time, os, sys, random, threading
+import signal, time, os, sys, random, threading, argparse
 
 # these are examples Event classes
 # together, they define the drift and control in a system
@@ -138,6 +138,8 @@ class CheckEvent1(CommonEvent):
 
             self.blackboard["input_sem"].release()
 
+def noop(instance, *args):
+    pass
 
 # this is an example of an 'Actor' / 'continuous-time' process
 # a specialist in the system, that injects entrypoint Event(s)
@@ -237,10 +239,17 @@ class KeyboardThread(threading.Thread):
                 local_hb = self.mutable_hb['hb']
 
 def main():
+    parser = argparse.ArgumentParser(description='eventdispatch example1')
+    parser.add_argument('--verbose',
+        help="verbose, default=True",
+        action='store_false')
+    args = parser.parse_args()
+
     print("###################")
     print("This program exercises some EventDispatch best practices and patterns")
     print("Type a number to command the system")
     print("Some commands will dispatch Events, which in turn dispatch other Events")
+    print("--verbose to print more")
     print("###################")
 
     # 0. Create `Blackboard` instance(s)
@@ -264,6 +273,12 @@ def main():
         blackboard,
         "ed1"
     )
+
+    if not args.verbose:
+        wrap_instance_method(ed1,
+            "internal_log",
+            replace_with_func(noop))
+
     blackboard["ed1"] = ed1
 
     # 3. Stand up their `run` targets as threads

@@ -147,6 +147,14 @@ class CompositeSemaphore(object):
             return
 
         with self.right_lock:
+            # this prevents rights from getting
+            # overwritten and hanging forever
+            # handle appropriately at Event level
+            if identifier in self.semaphores:
+                raise Exception(
+                    "right identifier already exists: {}".format(
+                        identifier))
+
             self.semaphores[identifier] = (
                 mutable_shared,
                 threading.Semaphore(1)
@@ -549,6 +557,28 @@ class CSBQCVED(BlackboardQueueCVED):
         override for your use case
         '''
         self.internal_log("POST_CB!")
+
+    # convienence function
+    def clear_cs_waits(self, blackboard, key=None):
+        if "volatile" not in blackboard:
+            self.internal_log("blackboard missing volatile, noop")
+            return
+
+        if "cs_registry" not in blackboard["volatile"]:
+            self.internal_log("blackboard volatile missing cs_registry")
+            return
+
+        with blackboard["volatile"]["cs_registry_l"]:
+            for k, v in blackboard["volatile"]["cs_registry"].items():
+                if key is not None:
+                    if k != key:
+                        continue
+
+                self.internal_log("k {}, v {}".format(k, v))
+                for s in v.semaphores.values():
+                    s[0]["status"] = -1
+                    # or just look at cs.mutable_hb?
+                    s[1].release()
 
 def main():
     s = 4

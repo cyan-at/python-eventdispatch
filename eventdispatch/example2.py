@@ -18,7 +18,7 @@ from .example1 import *
 # from composite_semaphore import *
 # from example1 import KeyboardThread
 
-import signal, time, os, sys, random, threading
+import signal, time, os, sys, random, threading, argparse
 
 class PrintReleaseEvent(CommonEvent):
     debug_color = bcolors.WARNING
@@ -197,6 +197,12 @@ class QuietCSRelease(CSRelease):
         pass
 
 def main():
+    parser = argparse.ArgumentParser(description='eventdispatch example2')
+    parser.add_argument('--verbose',
+        help="verbose, default=True",
+        action='store_false')
+    args = parser.parse_args()
+
     print("###################")
     print("This program exercises the CSBQCVED CSWait CSRelease mechanism")
     print("Type a number to command the system, of the form ####aaa or aaa#####, where # = [0,9]")
@@ -204,6 +210,7 @@ def main():
     print("If a comes first, that command will match printing the letter(s) with producing those # signals")
     print("")
     print("In this way, you can create on-the-fly associations between printing some letters with printing others")
+    print("--verbose to print more")
     print("###################")
 
     # 0. Create `Blackboard` instance(s)
@@ -223,11 +230,12 @@ def main():
         "ed1"
     )
 
-    # blackboard["CSWait"] = QuietCSWait
-    # blackboard["CSRelease"] = QuietCSRelease
-    # wrap_instance_method(ed1,
-    #     "internal_log",
-    #     replace_with_func(noop))
+    if not args.verbose:
+        blackboard["CSWait"] = QuietCSWait
+        blackboard["CSRelease"] = QuietCSRelease
+        wrap_instance_method(ed1,
+            "internal_log",
+            replace_with_func(noop))
 
     blackboard["ed1"] = ed1
 

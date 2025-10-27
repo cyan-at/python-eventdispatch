@@ -146,6 +146,57 @@ class CommonEvent(Event):
 
         return (ed.reserve_event_id(), blackboard), tuple(tokens)
 
+TIMERWAIT_TIMEOUT = -1
+TIMERWAIT_BAILED = 1
+
+class TimerWait(CommonEvent):
+    debug_color = bcolors.CYAN
+
+    def get_pending(self, args):
+        '''
+        override for your use case
+        '''
+        self.internal_log("args {}".format(args))
+        return list(args[2:])
+
+    def dispatch(self, event_dispatch, *args, **kwargs):
+        '''
+        <duration>, <csrelease key>
+        TODO, generalize this to be like CSWait
+        '''
+        self.instance = "{}_{}".format(
+            self.__class__.__name__, self.event_id)
+
+        self.right_k = args[1] # csrelease key to release
+        self.k = "{}_timer".format(self.right_k)
+        self.blackboard[self.k] = {
+            'timer' : threading.Event(),
+            'status' : TIMERWAIT_TIMEOUT # this is default
+        }
+
+        self.log("TimerWait sleeping for {} to CSRelease {}".format(
+            args[0], args[1]))
+
+        self.blackboard[self.k]['timer'] .wait(args[0])
+
+    def finish(self, event_dispatch, *args, **kwargs):
+        if self.blackboard[self.k]['status'] == TIMERWAIT_TIMEOUT:
+            pending = self.get_pending(args)
+            self.internal_log(
+                "TimerWait unblocking {}".format(
+                pending))
+
+            self.blackboard[event_dispatch.cv_name].acquire()
+            self.blackboard[event_dispatch.queue_name].append(
+                list(pending)
+            )
+            self.blackboard[event_dispatch.cv_name].notify(1)
+            self.blackboard[event_dispatch.cv_name].release()
+
+            self.blackboard.pop(self.k)
+        elif self.blackboard[self.k]['status'] == BAILED:
+            self.log("TimerWait bailed! noop")
+
 class BlackboardQueueCVED(EventDispatch):
     def __init__(self, blackboard, name):
         super(BlackboardQueueCVED, self).__init__(
