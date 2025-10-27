@@ -7,7 +7,7 @@ dependencies = [
     "argparse"
 ]
 name = "eventdispatch"
-version = "0.2.23"
+version = "0.2.24"
 authors = [{name = "Charlie Yan", email = "cyanatg@gmail.com"}]
 dynamic = ["scripts"]
 description = "Event Dispatch: discrete time synchronization"

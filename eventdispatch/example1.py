@@ -242,7 +242,7 @@ def main():
     parser = argparse.ArgumentParser(description='eventdispatch example1')
     parser.add_argument('--verbose',
         help="verbose, default=True",
-        action='store_false')
+        action='store_true')
     args = parser.parse_args()
 
     print("###################")
