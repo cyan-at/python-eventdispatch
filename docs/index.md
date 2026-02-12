@@ -28,7 +28,7 @@
 
 ---
 
-<a href="https://pypi.org/project/eventdispatch/#files" target="_blank">Try it yourself!</a>
+<a href="https://pypi.org/project/eventdispatch/#files" target="_blank">Install via pip</a>
 
 ```bash
 virtualenv try-eventdispatch
