@@ -36,6 +36,14 @@ virtualenv try-eventdispatch
 pip install eventdispatch
 ```
 
+<a href="https://index.ros.org/r/ros2_eventdispatch/" target="_blank">Install via ROS2-(>=Jazzy)</a>
+
+```bash
+sudo apt-get install -y ros-jazzy-eventdispatch-python
+sudo apt-get install -y ros-jazzy-eventdispatch-ros2-interfaces
+sudo apt-get install -y ros-jazzy-eventdispatch-ros2
+```
+
 ---
 
 * EventDispatch is based on the idea that **what happens defines what happens *next***. Independently derived, the idea is a mirror of <a href="https://en.wikipedia.org/wiki/Markov_chain">Markov chains</a>.
