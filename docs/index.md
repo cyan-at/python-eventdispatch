@@ -36,7 +36,7 @@ virtualenv try-eventdispatch
 pip install eventdispatch
 ```
 
-<a href="https://index.ros.org/r/ros2_eventdispatch/" target="_blank">Install via ROS2-(>=Jazzy)</a>
+<a href="https://index.ros.org/r/ros2_eventdispatch/" target="_blank">Install via ROS2-(>=Jazzy) APT</a>
 
 ```bash
 sudo apt-get install -y ros-jazzy-eventdispatch-python
