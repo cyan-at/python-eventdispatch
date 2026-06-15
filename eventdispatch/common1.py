@@ -177,7 +177,7 @@ class TimerWait(CommonEvent):
         self.log("TimerWait sleeping for {} to CSRelease {}".format(
             args[0], args[1]))
 
-        self.blackboard[self.k]['timer'] .wait(args[0])
+        self.blackboard[self.k]['timer'].wait(args[0])
 
     def finish(self, event_dispatch, *args, **kwargs):
         if self.blackboard[self.k]['status'] == TIMERWAIT_TIMEOUT:
@@ -193,9 +193,10 @@ class TimerWait(CommonEvent):
             self.blackboard[event_dispatch.cv_name].notify(1)
             self.blackboard[event_dispatch.cv_name].release()
 
-            self.blackboard.pop(self.k)
         elif self.blackboard[self.k]['status'] == TIMERWAIT_BAILED:
             self.log("TimerWait bailed! noop")
+
+        self.blackboard.pop(self.k)
 
 class BlackboardQueueCVED(EventDispatch):
     def __init__(self, blackboard, name):
