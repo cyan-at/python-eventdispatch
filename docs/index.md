@@ -28,7 +28,7 @@
 5. A **learning** python module, the surface learning / training code programs against:
     1. **[TrainingEvent](classes.md#trainingevent)**, SimEvent whose finish records its completion on the board's completions field
     2. **[TrainingDispatch](classes.md#trainingdispatch)**, SimClockCSBQCVED plus the completions field and clock settling at finish
-    3. Design notes: **[Training with CSWaits](training_cswait.md)** — decision points, the completions field, and CSWaits as tools the policy crafts itself
+    3. Design notes: **[Training with CSWaits](training_cswait.md)** — decision points, the completions field, and CSWaits as tools the policy crafts itself; **[Training CSWaits: the architecture](training_cswait_arch.md)** — what learns, and how, split by credit horizon
 
 Example programs, runnable after installing:
 
