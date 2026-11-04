@@ -390,7 +390,8 @@ This lives in the `sim` module: a `CSBQCVED` driven by a *simulated clock* inste
 * `do_dispatch` is the only dispatch behavior replaced: deserialize / construct as the base, then the event's `dispatch` is called synchronously for its duration quote and the completion is scheduled on the clock. No `EventThread` is spawned.
 * `run` is the only other override: an advance driver in the same `Thread(target=ed.run)` slot. It pumps drain cycles (`prior_cb` / `do_dispatch` / `post_cb`, untouched -- the CS* semantics carry into sim time), fires the soonest completion through the library's `dispatch_finish`, and parks on the queue condition variable only at true idle (queue and completion heap both empty). It is self-sufficient: no external pump.
 * Deterministic and faster than real time: the driver is the only thread touching the clock, the heap, or event execution, so operation order is duration order, never scheduler order.
-* `CSWait` / `CSRelease` are *clockless* elements -- they complete by condition (a semaphore rendezvous), not by duration, so they cannot quote into this clock and sit outside the seam.
+* `prior_cb` / `post_cb` run inside every drain cycle, exactly as inherited -- the clock replaces `do_dispatch`'s vehicle, not the cycle's hooks, so the CS gating `prior_cb` performs carries into sim time unchanged.
+* `CSWait` / `CSRelease` are *clockless* elements, and they stay in threads, outside the sim: `do_dispatch` routes the pair to the base class's threaded dispatch, so a `CSWait` still parks a real thread on its semaphore and a `CSRelease` still fires instantly -- neither quotes into, or reads, the clock. Only the consequence crosses in: the pending Event a `CSWait` releases enters through the queue and runs in-sim. Every other Event lives within the sim.
 
 ```python
 class SimClockCSBQCVED(CSBQCVED):
@@ -401,6 +402,7 @@ class SimClockCSBQCVED(CSBQCVED):
         the seam: same contract as BlackboardQueueCVED's
         (deserialize, construct, True/False), changing only the
         vehicle -- quote inline, schedule on the clock
+        (CSWait / CSRelease are routed to the base, threaded)
         '''
 
     def step_world(self, from_t, to_t):

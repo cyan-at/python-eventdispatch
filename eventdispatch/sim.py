@@ -7,7 +7,8 @@ caller: the dispatch owns event time, the engine owns world state.
 
 The library's two thread layers are replaced:
 
-  per event: no EventThread is spawned. The seam is do_dispatch --
+  per event: no EventThread is spawned for an event that quotes.
+      The seam is do_dispatch --
       the funnel through which every queue item (and every CSWait
       prior_cb dispatches) reaches core dispatch's thread spawn.
       Overridden here to keep its contract (deserialize, construct,
@@ -31,19 +32,25 @@ do_dispatch is the only dispatch behavior replaced; run() is the
 only other override. The completion heap and advance_one() are
 additions, driven from inside run().
 
-One semantic changes form: CSBQCVED's prior_cb blocks on the cs
-condition variable until every expected identifier registers. On a
-simulated clock that wait becomes a yield -- the cycle ends with
-the gated items still queued, and the pump resumes when the clock
-reaches whatever registers them.
+prior_cb / post_cb run inside every drain cycle, exactly as
+inherited -- the clock replaces do_dispatch's vehicle, not the
+cycle's hooks, so the composite-semaphore gating prior_cb performs
+carries into sim time unchanged. Its wait for CS registration
+stays a short real wait: registration happens on the CSWait's
+own thread (below), concurrently.
 
-CSWait and CSRelease are clockless elements. A CSWait completes by
-condition, not duration: its dispatch parks its own thread on the
-composite semaphore until a CSRelease releases it, so it cannot
-quote a completion time for the heap; a CSRelease is an
-instantaneous signal whose finish is a no-op. The pair sits
-outside this seam until a condition-watch -- registered waits
-re-checked on every release -- replaces the parked thread.
+CSWait and CSRelease are clockless elements, and they stay in
+threads, outside the sim. A CSWait completes by condition, not
+duration: its dispatch parks its own thread on the composite
+semaphore until a CSRelease releases it, so it cannot quote a
+completion time for the heap; a CSRelease is an instantaneous
+signal whose finish is a no-op. do_dispatch therefore routes the
+pair to the base class's threaded dispatch -- a new EventThread,
+in wall-clock thread space, never reading the clock. What crosses
+into the sim is only the consequence: CSWait.finish appends its
+pending event to the queue, and the driver drains and runs that
+event in-sim like any other. Every other event lives within the
+sim: quoted, heaped, and finished in duration order.
 
 SimEvent is the Event base class for this dispatch: dispatch()
 quotes a duration, finish() is the completion step. The base
@@ -59,7 +66,7 @@ import heapq
 import itertools
 
 from eventdispatch.common1 import CommonEvent, bcolors, wrap_with_prints
-from eventdispatch.composite_semaphore import CSBQCVED
+from eventdispatch.composite_semaphore import CSBQCVED, CSRelease, CSWait
 from eventdispatch.core import wrap_instance_method
 
 
@@ -119,7 +126,9 @@ class SimClockCSBQCVED(CSBQCVED):
     """CSBQCVED on a simulated clock (see module docstring).
 
     Pure dispatch machinery: no policy, no world, no iterables.
-    Self-sufficient: run() is the advance driver.
+    Self-sufficient: run() is the advance driver. prior_cb /
+    post_cb are inherited untouched; CSWait / CSRelease are
+    routed back to threaded dispatch, outside the sim.
     """
 
     def __init__(self, blackboard, name):
@@ -135,9 +144,21 @@ class SimClockCSBQCVED(CSBQCVED):
         '''Same contract as BlackboardQueueCVED.do_dispatch
         (deserialize, construct, True/False); only the vehicle
         changes: quote inline, schedule on the clock.
+        CSWait / CSRelease are the exception: routed to the base
+        class's threaded dispatch (below).
         '''
         if len(serialized_class_args) == 0:
             return False
+
+        # CSWait / CSRelease are clockless: they complete by
+        # condition, not duration, so they keep the base class's
+        # vehicle -- a new EventThread, outside the sim.
+        event_cls = blackboard[serialized_class_args[0]] \
+            if serialized_class_args[0] in blackboard else None
+        if isinstance(event_cls, type) and issubclass(
+                event_cls, (CSWait, CSRelease)):
+            return super().do_dispatch(
+                blackboard, serialized_class_args)
 
         try:
             constructor_args, dispatch_args = blackboard[
