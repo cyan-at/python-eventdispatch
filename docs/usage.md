@@ -21,10 +21,14 @@
 
 * To deal with *volatility* in connections between Events, consider using `CSWait`+`CSRelease` in a `CSBQCVED` dispatch.
 
+* To run a system *in simulation* (testing, training), use a `SimClockCSBQCVED` dispatch: Events quote durations instead of occupying threads, completions land in duration order, and a run is fully determined by its seed. Your decision-maker stays *clockless*: it is consulted at decision points (completions, interrupts, idle), never on a tick.
+* `CSWait` / `CSRelease` are *clockless*: they complete by condition (a semaphore rendezvous), not by duration, so they do not quote into a simulated clock. Their gated Events still re-enter through the queue when the condition fires.
+
 ## Example Use Cases
 
-1. See <a href="https://github.com/cyan-at/python-eventdispatch/blob/main/eventdispatch/example1.py" target="_blank">example1</a>
-1. See <a href="https://github.com/cyan-at/python-eventdispatch/blob/main/eventdispatch/example2.py" target="_blank">example2</a>
+1. See <a href="https://github.com/cyan-at/python-eventdispatch/blob/main/eventdispatch/example_core.py" target="_blank">example_core</a>
+1. See <a href="https://github.com/cyan-at/python-eventdispatch/blob/main/eventdispatch/example_cs.py" target="_blank">example_cs</a>
+1. See <a href="https://github.com/cyan-at/python-eventdispatch/blob/main/eventdispatch/example_sim_mujoco.py" target="_blank">example_sim_mujoco</a>
 
 ---
 **LEMMA**

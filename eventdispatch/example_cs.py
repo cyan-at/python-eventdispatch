@@ -6,6 +6,16 @@ Created on 2025-08-02
 
 Copyright (c) 2025, Charlie Yan
 License: Apache-2.0 (see LICENSE for details)
+
+Example cs: the composite-semaphore mechanism on a CSBQCVED.
+CSWait / CSRelease create on-the-fly associations between Events:
+type a command of the form ####aaa or aaa##### (# = digits,
+a = letters) -- if digits come first, that signal combination
+prints the letters; if letters come first, printing the letters
+produces those signals.
+
+Run:  eventdispatch_example_cs
+      (or: python -m eventdispatch.example_cs)
 '''
 
 from .core import *

@@ -22,9 +22,19 @@
     4. **[CSBQCVED](classes.md#csbqcved)**, a BlackboardQueueCVED subclass that enforces CSWait ordering, **necessary** if one wants to use CS* mechanisms
 
 
-3. A <a href="https://github.com/cyan-at/eventdispatch/blob/main/python3/eventdispatch/eventdispatch/example1.py" target="_blank">example1</a> python program, you can run after installing via command line: `eventdispatch_example1`
-4. A <a href="https://github.com/cyan-at/eventdispatch/blob/main/python3/eventdispatch/eventdispatch/composite_semaphore.py" target="_blank">cs_main</a> python program, you can run after installing via command line: `eventdispatch_cs_main`
-5. A <a href="https://github.com/cyan-at/eventdispatch/blob/main/python3/eventdispatch/eventdispatch/example2.py" target="_blank">example2</a> python program, you can run after installing via command line: `eventdispatch_example2`
+4. A **sim** python module, for running a dispatch on a *simulated clock* (simulation, testing, training):
+    1. **[SimEvent](classes.md#simevent)**, an Event base class whose `dispatch` *quotes a duration* instead of occupying a thread, and whose `finish` is the completion step
+    2. **[SimClockCSBQCVED](classes.md#simclockcsbqcved)**, a CSBQCVED whose dispatch schedules completions on the simulated clock and fires them in duration order: deterministic, faster than real time, no EventThreads. Engine adapters (MuJoCo, PyBullet, handwritten sims) override only `step_world`
+5. A **learning** python module, the surface learning / training code programs against:
+    1. **[LearningEvent](classes.md#learningevent)**, SimEvent named for trainable systems
+    2. **[LearningDispatch](classes.md#learningdispatch)**, SimClockCSBQCVED plus the training contract
+
+Example programs, runnable after installing:
+
+1. <a href="https://github.com/cyan-at/python-eventdispatch/blob/main/eventdispatch/example_core.py" target="_blank">example_core</a>, the core mechanism on a BlackboardQueueCVED: `eventdispatch_example_core`
+2. <a href="https://github.com/cyan-at/python-eventdispatch/blob/main/eventdispatch/example_cs.py" target="_blank">example_cs</a>, the CSWait / CSRelease mechanism on a CSBQCVED: `eventdispatch_example_cs`
+3. <a href="https://github.com/cyan-at/python-eventdispatch/blob/main/eventdispatch/composite_semaphore.py" target="_blank">cs_main</a>, the CompositeSemaphore produce / consume demo: `eventdispatch_cs_main`
+4. <a href="https://github.com/cyan-at/python-eventdispatch/blob/main/eventdispatch/example_sim_mujoco.py" target="_blank">example_sim_mujoco</a>, SimClockCSBQCVED stood up against MuJoCo: `eventdispatch_example_sim_mujoco` (requires `mujoco`)
 
 ---
 

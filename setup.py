@@ -12,9 +12,10 @@ setup(
     packages=find_packages(),
     entry_points=dict(
         console_scripts=[
-            'eventdispatch_example1=eventdispatch.example1:main',
+            'eventdispatch_example_core=eventdispatch.example_core:main',
             'eventdispatch_cs_main=eventdispatch.composite_semaphore:main',
-            'eventdispatch_example2=eventdispatch.example2:main'
+            'eventdispatch_example_cs=eventdispatch.example_cs:main',
+            'eventdispatch_example_sim_mujoco=eventdispatch.example_sim_mujoco:main'
         ]
     )
 )
