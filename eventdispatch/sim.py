@@ -9,8 +9,9 @@ The library's two thread layers are replaced:
 
   per event: no EventThread is spawned for an event that quotes.
       The seam is do_dispatch --
-      the funnel through which every queue item (and every CSWait
-      prior_cb dispatches) reaches core dispatch's thread spawn.
+      the funnel through which every queue item that quotes
+      reaches the clock (the CS pair never quotes: prior_cb
+      dispatches it threaded, as the base does).
       Overridden here to keep its contract (deserialize, construct,
       True/False) and change only the vehicle: the event's dispatch()
       is called synchronously for its duration quote, the completion
@@ -46,13 +47,17 @@ threads, outside the sim. A CSWait completes by condition, not
 duration: its dispatch parks its own thread on the composite
 semaphore until a CSRelease releases it, so it cannot quote a
 completion time for the heap; a CSRelease is an instantaneous
-signal whose finish is a no-op. do_dispatch therefore routes the
-pair to the base class's threaded dispatch -- a new EventThread,
-in wall-clock thread space, never reading the clock. What crosses
-into the sim is only the consequence: CSWait.finish appends its
-pending event to the queue, and the driver drains and runs that
-event in-sim like any other. Every other event lives within the
-sim: quoted, heaped, and finished in duration order.
+signal whose finish is a no-op. prior_cb therefore dispatches
+the pair on the base class's threaded vehicle -- a new
+EventThread, in wall-clock thread space, never reading the
+clock -- before any quoting happens: CSWaits in the base's
+partition, CSReleases once the gate is open (a release may
+only fire after its waiters have registered). What crosses
+into the sim is only the consequence: CSWait.finish appends
+its pending event to the queue, and the driver drains and
+runs that event in-sim like any other. Every other event
+lives within the sim: quoted, heaped, and finished in
+duration order.
 
 SimEvent is the Event base class for this dispatch: dispatch()
 quotes a duration, finish() is the completion step. The base
@@ -129,9 +134,10 @@ class SimClockCSBQCVED(CSBQCVED):
 
     Pure dispatch machinery: no policy, no world, no iterables.
     Self-sufficient: run() is the advance driver. post_cb is
-    inherited untouched; prior_cb is overridden to return the
-    CS gate instead of blocking; CSWait / CSRelease are routed
-    back to threaded dispatch, outside the sim.
+    inherited untouched; prior_cb reuses the base's CS
+    partition and returns the CS gate as a verdict instead of
+    blocking; the CS pair is dispatched threaded inside
+    prior_cb, outside the sim.
     """
 
     def __init__(self, blackboard, name):
@@ -148,21 +154,11 @@ class SimClockCSBQCVED(CSBQCVED):
         '''Same contract as BlackboardQueueCVED.do_dispatch
         (deserialize, construct, True/False); only the vehicle
         changes: quote inline, schedule on the clock.
-        CSWait / CSRelease are the exception: routed to the base
-        class's threaded dispatch (below).
+        The CS pair never reaches here: prior_cb dispatches
+        both on the base's threaded vehicle (see prior_cb).
         '''
         if len(serialized_class_args) == 0:
             return False
-
-        # CSWait / CSRelease are clockless: they complete by
-        # condition, not duration, so they keep the base class's
-        # vehicle -- a new EventThread, outside the sim.
-        event_cls = blackboard[serialized_class_args[0]] \
-            if serialized_class_args[0] in blackboard else None
-        if isinstance(event_cls, type) and issubclass(
-                event_cls, (CSWait, CSRelease)):
-            return super().do_dispatch(
-                blackboard, serialized_class_args)
 
         try:
             constructor_args, dispatch_args = blackboard[
@@ -253,51 +249,44 @@ class SimClockCSBQCVED(CSBQCVED):
     def prior_cb(self, blackboard):
         """The CS gate, returned as a verdict instead of a block.
 
-        Partitions the queue and dispatches this batch's CSWaits
-        as CSBQCVED.prior_cb does. Where the base then blocks on
-        cs_cv until every expected identifier registers, this
-        returns False while any dispatched identifier is still
-        unregistered, and run() breaks the drain cycle on False.
-        The outstanding set is stateful across cycles: a CSWait
-        dispatched in one cycle keeps the gate closed in the next
-        until it registers. (A rejected CSWait does not gate --
-        the base adds it to its expected set anyway, one
-        divergence, deliberately.) Returns True when open.
+        The partition itself is the base's (super): this batch's
+        CSWaits are dispatched threaded there, overlapping ones
+        rejected. Where the base then blocks on cs_cv until
+        every expected identifier registers, this returns False
+        while any accepted identifier is still unregistered, and
+        run() breaks the drain cycle on False. The outstanding
+        set is stateful across cycles: a CSWait dispatched in
+        one cycle keeps the gate closed in the next until it
+        registers. (A rejected CSWait does not gate -- the base
+        counts it in its expected set anyway, one divergence,
+        deliberately.)
+
+        CSReleases, which the base leaves to the drain, are
+        dispatched threaded here once the gate is open: they
+        complete by condition, not duration, so they must never
+        reach do_dispatch's quoting path, and a release may
+        only fire after its waiters have registered. Returns
+        True when open.
         """
-        cs_instances = []
-        non_cs_instances = []
-        for instance in blackboard[self.queue_name]:
-            if instance[0] in ["CSWait"]:
-                ids, identifier = CSWait.parse_lefts(instance[1])
-                with blackboard["volatile"]["cs_registry_l"] and \
-                        blackboard["volatile"]["cs_cv_l"]:
-                    if identifier in blackboard["volatile"]["cs_set"]:
-                        cs_instances.append(instance)
-                        self._cs_outstanding.add(identifier)
-                    elif len(set.intersection(
-                            set(blackboard["volatile"]
-                                ["cs_registry"].keys()),
-                            ids)) > 0:
-                        self.internal_log(
-                            "left overlap caught, rejecting "
-                            "CSWait attempt")
-                    else:
-                        cs_instances.append(instance)
-                        self._cs_outstanding.add(identifier)
-            else:
-                non_cs_instances.append(instance)
+        _, accepted_ids, _ = super()._dispatch_cs_waits(blackboard)
 
-        blackboard[self.queue_name] = non_cs_instances
-
-        for cs_instance in cs_instances:
-            self.do_dispatch(blackboard, cs_instance)
-
+        self._cs_outstanding |= accepted_ids
         self._cs_outstanding -= blackboard["volatile"]["cs_set"]
         if len(self._cs_outstanding) > 0:
             self.internal_log(
                 "SimClockCSBQCVED: CS gate closed, awaiting {}".format(
                     self._cs_outstanding))
-        return len(self._cs_outstanding) == 0
+            return False
+
+        releases = [i for i in blackboard[self.queue_name]
+                    if i[0] in ["CSRelease"]]
+        if releases:
+            blackboard[self.queue_name] = [
+                i for i in blackboard[self.queue_name]
+                if i[0] not in ["CSRelease"]]
+            for release in releases:
+                super().do_dispatch(blackboard, release)
+        return True
 
     # -- the advance driver (replaces BlackboardQueueCVED.run) --------
     def run(self, blackboard,

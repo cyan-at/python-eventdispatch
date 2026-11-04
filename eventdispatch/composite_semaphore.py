@@ -511,6 +511,60 @@ class CSBQCVED(BlackboardQueueCVED):
         blackboard["volatile"]["cs_cv"] = threading.Condition(
             blackboard["volatile"]["cs_cv_l"])
 
+    def _dispatch_cs_waits(self, blackboard):
+        '''partition the queue and dispatch this batch's CSWaits
+
+        The CS partition, shared by the blocking prior_cb below
+        and by subclasses that gate instead of blocking
+        (SimClockCSBQCVED): a CSWait whose identifier is already
+        registered, or whose lefts do not overlap a live
+        semaphore, is dispatched -- always on the threaded
+        vehicle (BlackboardQueueCVED.do_dispatch), never a
+        subclass's do_dispatch override. A CSWait whose lefts
+        overlap a live semaphore is rejected. The rest of the
+        queue is left in place.
+
+        Returns (cs_instances, accepted_ids, expected_ids):
+        expected includes rejected waits' identifiers (the
+        blocking prior_cb waits on it); accepted excludes them.
+        '''
+        cs_instances = []
+        accepted_ids = set()
+        expected_cs_ids = set()
+        non_cs_instances = []
+        for instance in blackboard[self.queue_name]:
+            if instance[0] in ["CSWait"]: # CSRelease, we only demand open-the-mouth on CSWait, CSRelease we don't care
+                ids, identifier = CSWait.parse_lefts(instance[1])
+
+                # reject overlap at the dispatch level
+                # instead of in event
+                with blackboard["volatile"]["cs_registry_l"] and blackboard["volatile"]["cs_cv_l"]:
+                    if identifier in blackboard["volatile"]["cs_set"]:
+                        cs_instances.append(instance)
+                        accepted_ids.add(identifier)
+                    elif len(set.intersection(
+                        set(blackboard["volatile"]["cs_registry"].keys()),
+                        ids)) > 0:
+                        self.internal_log("left overlap caught, rejecting CSWait attempt")
+                    else:
+                        cs_instances.append(instance)
+                        accepted_ids.add(identifier)
+
+                # we use the 'identifier' in cs_set because
+                # for now, CSWaits must be non-overlapping
+                # as in, 2 CSWaits will never share any lefts
+                # and, you can only dispatch a CSWaits of *exactly* the same lefts
+                expected_cs_ids.update([identifier])
+            else:
+                non_cs_instances.append(instance)
+
+        blackboard[self.queue_name] = non_cs_instances
+
+        for cs_instance in cs_instances:
+            BlackboardQueueCVED.do_dispatch(self, blackboard, cs_instance)
+
+        return cs_instances, accepted_ids, expected_cs_ids
+
     def prior_cb(self, blackboard):
         '''
         avoid overriding this
@@ -522,59 +576,17 @@ class CSBQCVED(BlackboardQueueCVED):
         '''
         self.internal_log("CSBQCVED: prior_cb")
 
-        cs_instances = []
-        expected_cs_ids = set()
-        non_cs_instances = []
-        for instance in blackboard[self.queue_name]:
-            if instance[0] in ["CSWait"]: # CSRelease, we only demand open-the-mouth on CSWait, CSRelease we don't care
-                # ids = CSWait.parse_lefts(instance[1])
-                # identifier = instance[2]
-
-                ids, identifier = CSWait.parse_lefts(instance[1])
-
-                self.internal_log("instance[1] {}, identifier: {}".format(instance[1], identifier))
-
-                # reject overlap at the dispatch level
-                # instead of in event
-                with blackboard["volatile"]["cs_registry_l"] and blackboard["volatile"]["cs_cv_l"]:
-                    if identifier in self.blackboard["volatile"]["cs_set"]:
-                        cs_instances.append(instance)
-                    elif len(set.intersection(
-                        set(blackboard["volatile"]["cs_registry"].keys()),
-                        # ids)) == 0:
-                        ids)) > 0:
-                        self.internal_log("left overlap caught, rejecting CSWait attempt")
-                    else:
-                        cs_instances.append(instance)
-
-                # expected_cs_ids.update(ids)
-
-                # we use the 'identifier' in cs_set because
-                # for now, CSWaits must be non-overlapping
-                # as in, 2 CSWaits will never share any lefts
-                # and, you can only dispatch a CSWaits of *exactly* the same lefts
-                expected_cs_ids.update([identifier])
-            else:
-                non_cs_instances.append(instance)
-
-        self.internal_log("CS_INSTANCES {}!!!!!".format(cs_instances))
-        self.internal_log("non_cs_instances {}!!!!!".format(non_cs_instances))
-
-        blackboard[self.queue_name] = non_cs_instances
+        cs_instances, _, expected_cs_ids = self._dispatch_cs_waits(blackboard)
 
         if len(cs_instances) == 0:
             # self.internal_log("prior_cb DONE!!!!")
             return
-
-        for cs_instance in cs_instances:
-            self.do_dispatch(blackboard, cs_instance)
 
         self.internal_log("expected_cs_ids {}!!!!!".format(expected_cs_ids))
         if len(expected_cs_ids) > 0:
             self.blackboard["volatile"]["cs_cv_l"].acquire()
             while len(set.intersection(
                 self.blackboard["volatile"]["cs_set"],
-                # ids)) == 0:
                 expected_cs_ids)) < len(expected_cs_ids):
                 self.blackboard["volatile"]["cs_cv"].wait()
             self.blackboard["volatile"]["cs_cv_l"].release()
