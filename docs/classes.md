@@ -13,27 +13,22 @@ Define `Event` subclasses as `<Event name>`:`Event type` pairs in this dictionar
 ```python
 class Blackboard(dict):
 	'''
-	a thread-safe dictionary
-	with a mechanism to notify whenever a key is set
+	a dict with per-key condition variables
 	'''
- 	def __init__(self, *args, **kwargs):
- 		'''
- 		vanilla + mutex
- 		'''
-
  	def __setitem__(self, key, value):
  		'''
- 		vanilla, plus mutex
+ 		vanilla, plus: if the key has a registered cv set,
+ 		append the value to its queue and notify its waiters
  		'''
 
-    def __getitem__(self, key):
+    def register_payload(self, payload, match_target = None):
         '''
-        vanilla, plus mutex
+        rent a cv set for payload (recycled from the pool, or new)
         '''
 
-    def __delitem__(self, key):
+    def release_cv(self, key):
         '''
-        vanilla, plus mutex
+        return key's cv set to the pool
         '''
 ```
 
@@ -91,24 +86,21 @@ class Event(object):
     @staticmethod
     def deserialize(ed, blackboard, *args, **kwargs):
         '''
-        Child Event types MUST override
-        It defines how an array is deserialized into an Event instance
+        MUST override: turn a serialized form into
+        (constructor_args, dispatch_args); involves no instance
         '''
 
     def dispatch(self, event_dispatch, *args, **kwargs):
         '''
-        Child Event types MUST override
-
-        Consider this function as
-        'injecting' drift and uncertainty into the system
+        MUST override: the work itself; runs in its own thread.
+        Do risky / uncertain stuff here.
         '''
 
     def finish(self, event_dispatch, *args, **kwargs):
         '''
-        Child Event types MUST override
-
-        Consider this function as
-        'injecting' control into the system
+        MUST override: called when dispatch's thread returns.
+        Deal with the outcomes here; only the event decides
+        what is dispatched next.
         '''
 ```
 
@@ -116,6 +108,12 @@ class Event(object):
 
 ```python
 class EventDispatch(object):
+    '''
+    dispatch(event) spawns an EventThread running event.dispatch;
+    when that thread returns, dispatch_finish calls event.finish
+    and releases the event id. dispatch is guarded by a switch:
+    an event can set it off to stop all further dispatching.
+    '''
     def __init__(self, blackboard = None : dict, ed_id = None : str):
         '''
         constructor
@@ -123,17 +121,18 @@ class EventDispatch(object):
 
     def reserve_event_id(self):
         '''
-        at any one time, event ids must be unique / no collisions
+        an id unique within this dispatch instance; recycled
         '''
 
     def release_event_id(self, event_id):
         '''
-        event id hygiene
+        return event_id to the pool
         '''
 
     def dispatch(self, event, *args, **kwargs):
         '''
         CORE function 1: spawn a thread with a constructed event
+        (guarded by the dispatch switch)
         '''
 
     def dispatch_finish(self, event, *args, **kwargs):
@@ -206,6 +205,9 @@ class BlackboardQueueCVED(EventDispatch):
         stubbed out to support CSBQCVED
 
         avoid overriding this
+
+        deserialize one queue item and dispatch it;
+        True on success, False (logged) on any failure
         '''
 
     def run(self, blackboard, # expected, dict
@@ -234,21 +236,30 @@ Please see <a href="https://github.com/cyan-at/python-eventdispatch/blob/main/ev
 
 ```python
 class CompositeSemaphore(object):
+    '''
+    a thread-safe semaphore with named lefts and many rights:
+    when every left key has been ticked in a round, all waiting
+    rights are released and the round resets
+    '''
     def add_left(self, k)
+        # add a key to the left set (between rounds)
 
     def clear_left(self, k)
+        # remove a key from the left set (between rounds)
 
     def wraparound_idempotent_increment(
         self, k, identifier=None)
 
     def release(self, k, identifier=None)
+        # tick k down; the last tick of the round releases all rights
 
     def acquire(self, identifier, mutable_shared)
+        # block until a full round of lefts releases this right
 ``` 
 
 ## CSWait
 
-This Event subclass bookkeeps, in a `cs_set`, `cs_registry` and finds or constructs a `CompositeSemaphore`, and acquires on it.
+This Event subclass bookkeeps, in a `cs_set`, `cs_registry` and finds or constructs a `CompositeSemaphore`, and acquires on it. Its `finish` enqueues the pending Event onto the dispatch queue; it never dispatches it directly.
 
 It also exposes some callbacks to override for your usecase
 
@@ -281,7 +292,7 @@ class CSWait(CommonEvent):
 
 ## CSRelease
 
-This Event subclass bookkeeps, finds any `CompositeSemaphore`s in `cs_registry` and releases on them
+This Event subclass bookkeeps, finds any `CompositeSemaphore`s in `cs_registry` and releases on them. The release happens entirely in `dispatch`; `finish` is a noop.
 
 It also exposes some callbacks to override for your usecase
 
@@ -321,6 +332,9 @@ class CSBQCVED(BlackboardQueueCVED):
     def prior_cb(self, blackboard)
         '''
         avoid overriding this
+
+        CSWaits dispatch first; the rest of the queue waits
+        until every expected CSWait has registered
         '''
 
     def post_cb(self, blackboard)
