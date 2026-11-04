@@ -455,7 +455,7 @@ class TrainingEvent(SimEvent):
 
 ## TrainingDispatch
 
-This lives in the `learning` module: `SimClockCSBQCVED` plus one registered blackboard asset -- the **completions field** (key `training_completions`, a `CompletionLog`). Every `TrainingEvent` completion lands there in completion order: event id, class name, dispatch args, start / completion times, quoted duration, wake flag, outcome. The log is the harness's whole input: a training or inference loop reads it (blocking on its condition variable when it needs to wait) and decides from the records. The dispatch never engages a policy; notification stops at the field. (`LearningDispatch` remains as an alias.)
+This lives in the `learning` module: `SimClockCSBQCVED` plus one registered blackboard asset -- the **completions field** (key `training_completions`, a `CompletionLog`). Every `TrainingEvent` completion lands there in completion order: event id, class name, dispatch args, start / completion times, quoted duration, wake flag, outcome. The log is the harness's whole input: a training or inference loop reads it (blocking on its condition variable when it needs to wait) and decides from the records. The dispatch never engages a policy; notification stops at the field. It also settles the clock at finish: when a `TrainingEvent`'s outcome consumed less than it quoted (`actual_duration`, set by `run_outcome()` -- a navigation blocked mid-plan is the canonical case), the clock settles to `started_at + actual_duration`, never forward past the quote and never back across another pending completion. (`LearningDispatch` remains as an alias.)
 
 ```python
 class TrainingDispatch(SimClockCSBQCVED):
