@@ -169,6 +169,9 @@ class SimClockCSBQCVED(CSBQCVED):
             event = blackboard[serialized_class_args[0]](
                 *constructor_args)
             event.event_dispatch = self
+            # event.dispatch's return is mapped to a duration
+            # here (the int of the older sim lineage). Units are
+            # the clock's -- ticks, seconds -- the clock is agnostic.
             duration = event.dispatch(self, *dispatch_args)
             if duration is None or duration < 0:
                 raise ValueError(
