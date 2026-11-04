@@ -430,24 +430,46 @@ class SimClockCSBQCVED(CSBQCVED):
         '''
 ```
 
-## LearningEvent
+## TrainingEvent
 
-This lives in the `learning` module: `SimEvent`, named for trainable systems. The sim-time protocol is inherited unchanged. Every language implementation of the framework keeps a `learning` module like this one, and training code imports from it, never from core internals.
-
-```python
-class LearningEvent(SimEvent):
-    '''
-    SimEvent for trainable systems
-    '''
-```
-
-## LearningDispatch
-
-This lives in the `learning` module: `SimClockCSBQCVED` plus the *training contract* -- the training loop steps the world and the clocked iterables (perception, monitors) with the clock so interrupts land at sim times mid-event with elapsed / progress accounting; each completion returns its release to the policy loop; and the dispatch signals idle when nothing is in flight, because a policy is *clockless*: it is called by that signal, never on a tick of its own.
+This lives in the `learning` module. Every language implementation of the framework keeps a `learning` module like this one, and training code imports from it, never from core internals. `TrainingEvent` is `SimEvent` whose completion is recorded: subclasses override `run_outcome()` (the outcome model, run at completion time against fresh state) instead of `finish()`; the base `finish()` calls it, appends the completion record to the completions field (below), and returns the outcome. The `wake` attribute (default `True`, settable from the outcome) is the harness's engagement hint, read after `finish()` -- a record with `wake` set is a decision point. Its `deserialize` drops `CommonEvent`'s non-empty-tail check, so zero-arg events dispatch from the queue. (`LearningEvent` remains as an alias.)
 
 ```python
-class LearningDispatch(SimClockCSBQCVED):
+class TrainingEvent(SimEvent):
     '''
-    SimClockCSBQCVED + the training contract (see prose above)
+    SimEvent + the completion record (see prose above)
     '''
+
+    wake = True
+
+    def run_outcome(self, ed, *args, **kwargs):
+        '''
+        subclass hook: run the outcome model, return the outcome
+        '''
+
+    def finish(self, ed, *args, **kwargs):
+        '''
+        run_outcome(), record the completion, return the outcome
+        '''
 ```
+
+## TrainingDispatch
+
+This lives in the `learning` module: `SimClockCSBQCVED` plus one registered blackboard asset -- the **completions field** (key `training_completions`, a `CompletionLog`). Every `TrainingEvent` completion lands there in completion order: event id, class name, dispatch args, start / completion times, quoted duration, wake flag, outcome. The log is the harness's whole input: a training or inference loop reads it (blocking on its condition variable when it needs to wait) and decides from the records. The dispatch never engages a policy; notification stops at the field. (`LearningDispatch` remains as an alias.)
+
+```python
+class TrainingDispatch(SimClockCSBQCVED):
+    '''
+    SimClockCSBQCVED + the completions field (see prose above)
+    '''
+
+    @property
+    def completions(self) -> CompletionLog:
+        '''
+        the blackboard's CompletionLog
+        '''
+```
+
+## CompletionLog
+
+This lives in the `learning` module: the completions field's type -- an append-only, condition-signalled list of completion records. Writers append (`TrainingEvent.finish`, on the dispatch's driver thread); readers index by position, `wait_for_count(n)` until enough records exist, or `snapshot()`. Records are never removed during a run; a consumer tracks its own cursor.
