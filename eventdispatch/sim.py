@@ -32,12 +32,14 @@ do_dispatch is the only dispatch behavior replaced; run() is the
 only other override. The completion heap and advance_one() are
 additions, driven from inside run().
 
-prior_cb / post_cb run inside every drain cycle, exactly as
-inherited -- the clock replaces do_dispatch's vehicle, not the
-cycle's hooks, so the composite-semaphore gating prior_cb performs
-carries into sim time unchanged. Its wait for CS registration
-stays a short real wait: registration happens on the CSWait's
-own thread (below), concurrently.
+prior_cb / post_cb run inside every drain cycle; post_cb is
+inherited untouched. prior_cb is overridden in exactly one
+respect: where the base blocks on the cs condition variable
+until every expected CSWait registers, this one returns the
+gate as a verdict (True / False) and run() breaks the drain
+cycle on False -- the outstanding set is held across cycles,
+so the drain defers until registration (which happens on the
+CSWait's own thread, below) without ever stalling the driver.
 
 CSWait and CSRelease are clockless elements, and they stay in
 threads, outside the sim. A CSWait completes by condition, not
@@ -126,9 +128,10 @@ class SimClockCSBQCVED(CSBQCVED):
     """CSBQCVED on a simulated clock (see module docstring).
 
     Pure dispatch machinery: no policy, no world, no iterables.
-    Self-sufficient: run() is the advance driver. prior_cb /
-    post_cb are inherited untouched; CSWait / CSRelease are
-    routed back to threaded dispatch, outside the sim.
+    Self-sufficient: run() is the advance driver. post_cb is
+    inherited untouched; prior_cb is overridden to return the
+    CS gate instead of blocking; CSWait / CSRelease are routed
+    back to threaded dispatch, outside the sim.
     """
 
     def __init__(self, blackboard, name):
@@ -138,6 +141,7 @@ class SimClockCSBQCVED(CSBQCVED):
         self._pending_map = {}          # event_id -> (event, dispatch_args)
         self._seq = itertools.count()
         self._cancelled = set()
+        self._cs_outstanding = set()  # CSWait ids dispatched, unregistered
 
     # -- the dispatch seam -------------------------------------------
     def do_dispatch(self, blackboard, serialized_class_args):
@@ -245,6 +249,56 @@ class SimClockCSBQCVED(CSBQCVED):
                 return complete_at - self.now
         return None
 
+    # -- the CS gate (replaces CSBQCVED.prior_cb's blocking wait) -----
+    def prior_cb(self, blackboard):
+        """The CS gate, returned as a verdict instead of a block.
+
+        Partitions the queue and dispatches this batch's CSWaits
+        as CSBQCVED.prior_cb does. Where the base then blocks on
+        cs_cv until every expected identifier registers, this
+        returns False while any dispatched identifier is still
+        unregistered, and run() breaks the drain cycle on False.
+        The outstanding set is stateful across cycles: a CSWait
+        dispatched in one cycle keeps the gate closed in the next
+        until it registers. (A rejected CSWait does not gate --
+        the base adds it to its expected set anyway, one
+        divergence, deliberately.) Returns True when open.
+        """
+        cs_instances = []
+        non_cs_instances = []
+        for instance in blackboard[self.queue_name]:
+            if instance[0] in ["CSWait"]:
+                ids, identifier = CSWait.parse_lefts(instance[1])
+                with blackboard["volatile"]["cs_registry_l"] and \
+                        blackboard["volatile"]["cs_cv_l"]:
+                    if identifier in blackboard["volatile"]["cs_set"]:
+                        cs_instances.append(instance)
+                        self._cs_outstanding.add(identifier)
+                    elif len(set.intersection(
+                            set(blackboard["volatile"]
+                                ["cs_registry"].keys()),
+                            ids)) > 0:
+                        self.internal_log(
+                            "left overlap caught, rejecting "
+                            "CSWait attempt")
+                    else:
+                        cs_instances.append(instance)
+                        self._cs_outstanding.add(identifier)
+            else:
+                non_cs_instances.append(instance)
+
+        blackboard[self.queue_name] = non_cs_instances
+
+        for cs_instance in cs_instances:
+            self.do_dispatch(blackboard, cs_instance)
+
+        self._cs_outstanding -= blackboard["volatile"]["cs_set"]
+        if len(self._cs_outstanding) > 0:
+            self.internal_log(
+                "SimClockCSBQCVED: CS gate closed, awaiting {}".format(
+                    self._cs_outstanding))
+        return len(self._cs_outstanding) == 0
+
     # -- the advance driver (replaces BlackboardQueueCVED.run) --------
     def run(self, blackboard,
         prefix,
@@ -272,18 +326,19 @@ class SimClockCSBQCVED(CSBQCVED):
                 blackboard[self.mutex_name].release()
                 break
 
-            ##### drain cycle, as inherited (prior_cb gates CS) #####
-            self.prior_cb(blackboard)
+            ##### drain cycle: prior_cb gates; False breaks it #####
+            gate_open = self.prior_cb(blackboard)
 
-            while len(blackboard[self.queue_name]) > 0:
-                serialized_class_args = blackboard[self.queue_name].pop(0)
+            if gate_open:
+                while len(blackboard[self.queue_name]) > 0:
+                    serialized_class_args = blackboard[self.queue_name].pop(0)
 
-                if not self.do_dispatch(blackboard, serialized_class_args):
-                    self.internal_log(self.name + " failed dispatching something: {}".format(
-                        serialized_class_args))
-                    continue
+                    if not self.do_dispatch(blackboard, serialized_class_args):
+                        self.internal_log(self.name + " failed dispatching something: {}".format(
+                            serialized_class_args))
+                        continue
 
-            self.post_cb(blackboard)
+                self.post_cb(blackboard)
             ############################################################
 
             blackboard[self.mutex_name].release()
@@ -292,6 +347,12 @@ class SimClockCSBQCVED(CSBQCVED):
             # which the next cycle quotes at the new now
             if len(self._pending_map) > 0:
                 self.advance_one()
+            elif not gate_open:
+                # gated, nothing in flight: park on cs_cv until a
+                # registration notifies it (the timeout backstops
+                # shutdown, which signals the queue cv instead)
+                with blackboard["volatile"]["cs_cv_l"]:
+                    blackboard["volatile"]["cs_cv"].wait(0.1)
 
             if empty_cv_name is not None:
                 if len(blackboard[self.queue_name]) == 0 and\
