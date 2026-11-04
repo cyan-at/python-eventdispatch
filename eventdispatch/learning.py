@@ -34,12 +34,15 @@ TrainingEvent completion lands there, in completion order: event
 id, class name, dispatch args, start / completion times, quoted
 duration, wake flag, outcome. That log is the signal board's first
 area and the harness's whole input: a training or inference loop
-reads it (blocking on its condition variable when it needs to
-wait), and decides from the records -- a record whose wake flag is
-set is a decision point. The dispatch itself never engages a
-policy; notification stops at the field. The wake flag is read
-after finish() runs, so an event can set it from its outcome
-(wake on failure, sleep on routine success).
+consumes it by take() -- block for the next completion, drain
+everything that has landed -- and decides from the records; a
+record whose wake flag is set is a decision point. Draining on
+use is the field's hygiene: it has exactly one consumer, so the
+buffer never holds more than one decision interval's records.
+The dispatch itself never engages a policy; notification stops
+at the field. The wake flag is read after finish() runs, so an
+event can set it from its outcome (wake on failure, sleep on
+routine success).
 """
 from __future__ import annotations
 
@@ -51,13 +54,15 @@ COMPLETIONS_KEY = "training_completions"
 
 
 class CompletionLog:
-    """The completions field: an append-only, condition-signalled
-    list of completion records, in completion order.
+    """The completions field: a condition-signalled buffer of
+    completion records, in completion order, drained on use.
 
-    Writers append (TrainingEvent.finish, on the dispatch's driver
-    thread); readers -- the harness -- index by position, wait for
-    the count to grow, or snapshot. Records are never removed
-    during a run; a consumer tracks its own cursor.
+    Writers append (TrainingEvent.finish, on the dispatch's
+    driver thread). The one reader -- the harness -- consumes by
+    take(): records leave the buffer as they are read, so the
+    buffer stays bounded by one decision interval no matter how
+    long the run. snapshot() is a non-consuming peek, for tests
+    and diagnostics only; it is not a read path.
     """
 
     def __init__(self):
@@ -69,25 +74,27 @@ class CompletionLog:
             self._records.append(record)
             self._cv.notify_all()
 
-    def __len__(self):
+    def take(self, timeout=None):
+        """Block until at least one record exists, then drain and
+        return everything buffered, in completion order. Returns
+        [] on timeout."""
+        with self._cv:
+            if not self._cv.wait_for(lambda: len(self._records) > 0,
+                                     timeout):
+                return []
+            records, self._records = self._records, []
+            return records
+
+    @property
+    def pending(self):
+        """Records buffered right now (not yet taken)."""
         with self._cv:
             return len(self._records)
 
-    def __getitem__(self, index):
-        with self._cv:
-            return self._records[index]
-
     def snapshot(self):
-        """All records so far, as a list copy."""
+        """Everything buffered, as a list copy. Does not drain."""
         with self._cv:
             return list(self._records)
-
-    def wait_for_count(self, n, timeout=None):
-        """Block until at least n records exist. Returns False on
-        timeout."""
-        with self._cv:
-            return self._cv.wait_for(
-                lambda: len(self._records) >= n, timeout)
 
 
 class TrainingEvent(SimEvent):

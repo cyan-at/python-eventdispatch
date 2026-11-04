@@ -472,4 +472,4 @@ class TrainingDispatch(SimClockCSBQCVED):
 
 ## CompletionLog
 
-This lives in the `learning` module: the completions field's type -- an append-only, condition-signalled list of completion records. Writers append (`TrainingEvent.finish`, on the dispatch's driver thread); readers index by position, `wait_for_count(n)` until enough records exist, or `snapshot()`. Records are never removed during a run; a consumer tracks its own cursor.
+This lives in the `learning` module: the completions field's type -- a condition-signalled buffer of completion records, drained on use. Writers append (`TrainingEvent.finish`, on the dispatch's driver thread); the one reader -- the harness -- consumes by `take()`: block for the next completion, drain everything buffered. Draining is the hygiene: with a single consumer, the buffer never holds more than one decision interval's records. `snapshot()` is a non-consuming peek for tests and diagnostics, not a read path.
