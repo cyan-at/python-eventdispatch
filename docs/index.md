@@ -26,8 +26,9 @@
     1. **[SimEvent](classes.md#simevent)**, an Event base class whose `dispatch` *quotes a duration* instead of occupying a thread, and whose `finish` is the completion step
     2. **[SimClockCSBQCVED](classes.md#simclockcsbqcved)**, a CSBQCVED whose dispatch schedules completions on the simulated clock and fires them in duration order: deterministic, faster than real time, no EventThreads. Engine adapters (MuJoCo, PyBullet, handwritten sims) override only `step_world`
 5. A **learning** python module, the surface learning / training code programs against:
-    1. **[LearningEvent](classes.md#learningevent)**, SimEvent named for trainable systems
-    2. **[LearningDispatch](classes.md#learningdispatch)**, SimClockCSBQCVED plus the training contract
+    1. **[TrainingEvent](classes.md#trainingevent)**, SimEvent whose finish records its completion on the board's completions field
+    2. **[TrainingDispatch](classes.md#trainingdispatch)**, SimClockCSBQCVED plus the completions field and clock settling at finish
+    3. Design notes: **[Training with CSWaits](training_cswait.md)** — decision points, the completions field, and CSWaits as tools the policy crafts itself
 
 Example programs, runnable after installing:
 
