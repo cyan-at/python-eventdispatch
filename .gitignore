@@ -1,3 +1,4 @@
 dist/*
 debian/.fuse*
 *.fuse*
+__pycache__/
