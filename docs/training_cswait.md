@@ -4,7 +4,8 @@ Design notes for the learning surface (`eventdispatch.learning`):
 how a trained policy lives next to a dispatch, and how the
 composite-semaphore pair — CSWait / CSRelease — becomes a tool
 the policy wields itself. Status: the completion machinery is
-implemented (TrainingEvent / TrainingDispatch / CompletionLog);
+implemented (RecordingEvent / SimClockRecordingDispatch /
+WallClockRecordingDispatch / RecordingLog);
 the policy-crafted waits are design, not yet built.
 
 ## The policy lives outside the dispatch
@@ -20,27 +21,29 @@ sequence of consultations, which is what makes it *clockless*:
 policy inference is called by signalling, never at a regular
 rate.
 
-## The signal: finish, the completions field, the harness
+## The signal: finish, the recordings field, the harness
 
 Nothing signals at dispatch; dispatch is only scheduling (quote
 a duration, schedule the completion). The signal is the
 *finish*:
 
-1. `TrainingEvent.finish()` runs the event's outcome model
-   (`run_outcome()`) and appends a completion record to the
-   blackboard's completions field — a `CompletionLog` the
-   dispatch registered at construction: event id, class name,
-   dispatch args, start / completion times, quoted duration,
-   wake flag, outcome.
+1. At completion the recording dispatch runs the event's
+   outcome model (`RecordingEvent.run_outcome()`) and appends a
+   record to the blackboard's recordings field — a
+   `RecordingLog` the dispatch registered at construction:
+   event id, class name, dispatch args, start / completion
+   times, quoted duration, wake flag, outcome. A preempted
+   recording event gets a `PREEMPTED` record too.
 2. The harness — the training loop, or the inference process —
    consumes the field by `take()`: block for the next
    completion, drain everything buffered. The field has exactly
    one consumer, so draining on use is its hygiene: the buffer
    never holds more than one decision interval's records.
-3. The harness, not the dispatch, decides engagement: a record
-   whose wake flag is set is a decision point. The flag is read
-   after finish, so an event can set it from its outcome — wake
-   on failure, sleep on routine success. Non-waking completions
+3. The event decides engagement through its wake flag, and the
+   harness honors it: a record whose wake flag is set always
+   wakes the policy. The flag is read after the outcome, so an
+   event can set it from its outcome — wake on failure, sleep
+   on routine success. Non-waking completions
    still land in the field: accounting sees them, the policy
    never does.
 
