@@ -1,3 +1,17 @@
+python-eventdispatch (0.3.0) trixie; urgency=medium
+
+  Breaking: the learning surface is rebuilt on recording.
+  TrainingEvent is replaced by RecordingEvent, a sibling of SimEvent
+  (both now ClockedEvent). TrainingDispatch is replaced by
+  SimClockRecordingDispatch; new WallClockRecordingDispatch records
+  on the wall clock. The recordings field (key "recordings",
+  RecordingLog) replaces the completions field. Preemption is
+  recorded (PREEMPTED, on_preempt hook). Clock settling is refused
+  when step_world() drives an engine. Aliases LearningEvent /
+  LearningDispatch are removed.
+
+ -- Charlie Yan <cyanatg@gmail.com>  Mon, 23 Nov 2026 07:30:00 +0000
+
 python-eventdispatch (0.2.5) trixie; urgency=high
 
   Trim trailing whitespace.

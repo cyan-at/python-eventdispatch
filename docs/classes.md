@@ -344,7 +344,7 @@ class CSBQCVED(BlackboardQueueCVED):
 ``` 
 ## SimEvent
 
-This lives in the `sim` module: the `Event` base class for simulated-clock systems. It still has just `dispatch` and `finish`, with different jobs than in wall-clock systems:
+This lives in the `sim` module: the `Event` base class for simulated-clock systems. Its clock stamps and helpers (`started_at`, `quoted_duration`, `now()`, `elapsed()`, `progress()`) come from `ClockedEvent` (`common1`), which it shares with its sibling `RecordingEvent` (`learning`). It still has just `dispatch` and `finish`, with different jobs than in wall-clock systems:
 
 * `dispatch` *quotes a duration* -- scheduling only: no outcome sampling, no mutation.
 * `finish` *is the completion step* -- it runs the outcome model at completion time, against fresh state.
@@ -352,7 +352,7 @@ This lives in the `sim` module: the `Event` base class for simulated-clock syste
 The base stamps `started_at` / `quoted_duration` at dispatch time, and exposes the dispatch clock through the `now()` member function, so the same Event interface is implemented against every simulator (MuJoCo, PyBullet, handwritten, ...). A cancelled event never reaches `finish`: it never mutates state.
 
 ```python
-class SimEvent(CommonEvent):
+class SimEvent(ClockedEvent):
     started_at       # stamped by the dispatch at quote time
     quoted_duration  # the duration this event's dispatch returned
 
@@ -430,46 +430,91 @@ class SimClockCSBQCVED(CSBQCVED):
         '''
 ```
 
-## TrainingEvent
+## RecordingEvent
 
-This lives in the `learning` module. Every language implementation of the framework keeps a `learning` module like this one, and training code imports from it, never from core internals. `TrainingEvent` is `SimEvent` whose completion is recorded: subclasses override `run_outcome()` (the outcome model, run at completion time against fresh state) instead of `finish()`; the base `finish()` calls it, appends the completion record to the completions field (below), and returns the outcome. The `wake` attribute (default `True`, settable from the outcome) is the harness's engagement hint, read after `finish()` -- a record with `wake` set is a decision point. Its `deserialize` drops `CommonEvent`'s non-empty-tail check, so zero-arg events dispatch from the queue. (`LearningEvent` remains as an alias.)
+This lives in the `learning` module. Every language implementation of the framework keeps a `learning` module like this one, and training code imports from it, never from core internals. Recording is what makes learning possible on this framework: `RecordingEvent` is the Event base class that **opts in** to recording. It is a sibling of `SimEvent` -- both are `ClockedEvent` (`common1`), which carries the clock stamps (`started_at`, `quoted_duration`) and helpers (`now()`, `elapsed()`, `progress()`) -- so it says nothing about how time passes: the dispatch it runs on decides that.
+
+Subclasses override `dispatch()` (stash the args, return a duration quote -- required on the sim clock, ignored on the wall clock) and `run_outcome()` (do the work, apply the effects, return the outcome), never `finish()`. The event does not record itself: the recording dispatch writes the record. `wake` (class default `True`, settable from `run_outcome()`) is the event's own decision: a record whose `wake` is `True` always wakes the policy. The optional `on_preempt(ed)` hook runs when the event is preempted; it may set `wake` and return a dict of notes for the record, and must not mutate world state. On the wall clock, `run_outcome()` cooperates with preemption through `preempt_requested()` / `wait_preempt()`. Its `deserialize` drops `CommonEvent`'s non-empty-tail check, so zero-arg events dispatch from the queue.
 
 ```python
-class TrainingEvent(SimEvent):
+class RecordingEvent(ClockedEvent):
     '''
-    SimEvent + the completion record (see prose above)
+    opts in to recording (see prose above)
     '''
 
     wake = True
+    actual_duration = None
+
+    def dispatch(self, ed, *args, **kwargs):
+        '''
+        stash the args; return the duration quote
+        '''
 
     def run_outcome(self, ed, *args, **kwargs):
         '''
-        subclass hook: run the outcome model, return the outcome
+        subclass hook: do the work, return the outcome
         '''
 
-    def finish(self, ed, *args, **kwargs):
+    def on_preempt(self, ed):
         '''
-        run_outcome(), record the completion, return the outcome
+        optional: set wake, return notes; no world mutation
+        '''
+
+    def preempt_requested(self):
+        '''
+        wall clock: True once the dispatch asked this event to stop
+        '''
+
+    def wait_preempt(self, timeout=None):
+        '''
+        wall clock: interruptible sleep; True if a stop was requested
         '''
 ```
 
-## TrainingDispatch
+## RecordingMixin
 
-This lives in the `learning` module: `SimClockCSBQCVED` plus one registered blackboard asset -- the **completions field** (key `training_completions`, a `CompletionLog`). Every `TrainingEvent` completion lands there in completion order: event id, class name, dispatch args, start / completion times, quoted duration, wake flag, outcome. The log is the harness's whole input: a training or inference loop reads it (blocking on its condition variable when it needs to wait) and decides from the records. The dispatch never engages a policy; notification stops at the field. It also settles the clock at finish: when a `TrainingEvent`'s outcome consumed less than it quoted (`actual_duration`, set by `run_outcome()` -- a navigation blocked mid-plan is the canonical case), the clock settles to `started_at + actual_duration`, never forward past the quote and never back across another pending completion. (`LearningDispatch` remains as an alias.)
+This lives in the `learning` module: the dispatch side of recording, mixed in ahead of a dispatch class. It registers the **recordings field** (blackboard key `recordings`, a `RecordingLog`) and writes a record for every recording event that completes or is preempted: event id, class name, dispatch args, start / end times, wake flag, outcome -- plus the quoted duration on the sim clock, and `actual_duration` when the event set it. A preempted event's record has outcome `PREEMPTED`, its elapsed time, its progress fraction (sim clock), its `on_preempt` notes, and on the wall clock whatever `run_outcome()` returned as `partial_outcome`. Events that are not `RecordingEvent` pass through untouched and are never recorded. The log is the harness's whole input: a training or inference loop reads it and engages the policy on every record whose `wake` is set. The dispatch never engages a policy; notification stops at the field.
+
+## SimClockRecordingDispatch
+
+This lives in the `learning` module: `RecordingMixin` on `SimClockCSBQCVED`. Training runs here. Recording events must quote a duration; `run_outcome()` runs at completion time on the driver thread. `cancel()` writes the `PREEMPTED` record at cancel time (the event never runs). Clock settling: when `run_outcome()` sets `actual_duration` below the quote (a navigation blocked mid-plan is the canonical case), the clock settles back to `started_at + actual_duration` -- but only while `step_world()` is the base no-op, i.e. when the events move the world themselves. With an engine adapter the world has already been stepped to the quote, and settling back would step that interval twice, so it raises instead. An `actual_duration` beyond the quote is recorded and ignored.
 
 ```python
-class TrainingDispatch(SimClockCSBQCVED):
+class SimClockRecordingDispatch(RecordingMixin, SimClockCSBQCVED):
     '''
-    SimClockCSBQCVED + the completions field (see prose above)
+    recording on the simulated clock (see prose above)
     '''
 
     @property
-    def completions(self) -> CompletionLog:
+    def recordings(self) -> RecordingLog:
         '''
-        the blackboard's CompletionLog
+        the blackboard's RecordingLog
+        '''
+
+    def cancel(self, event_id):
+        '''
+        preempt a pending event; a recording event is recorded PREEMPTED
         '''
 ```
 
-## CompletionLog
+## WallClockRecordingDispatch
 
-This lives in the `learning` module: the completions field's type -- a condition-signalled buffer of completion records, drained on use. Writers append (`TrainingEvent.finish`, on the dispatch's driver thread); the one reader -- the harness -- consumes by `take()`: block for the next completion, drain everything buffered. Draining is the hygiene: with a single consumer, the buffer never holds more than one decision interval's records. `snapshot()` is a non-consuming peek for tests and diagnostics, not a read path.
+This lives in the `learning` module: `RecordingMixin` on `CSBQCVED`. Inference and calibration on real hardware run here. A recording event's `dispatch()` runs inline (it stashes the args; its return value is ignored -- there is no quote on the wall clock), then `run_outcome()` runs on the event's own thread, and the record is written when it returns, with real start / end times from `now` (`time.monotonic()`). Any other event is dispatched exactly as `CSBQCVED` does. `cancel()` asks a running recording event to stop -- stopping is the event's job (thread cooperation) -- and the `PREEMPTED` record is written when it actually returns. There is no timeout: an event that never returns writes no record.
+
+```python
+class WallClockRecordingDispatch(RecordingMixin, CSBQCVED):
+    '''
+    recording on the wall clock (see prose above)
+    '''
+
+    now  # time.monotonic()
+
+    def cancel(self, event_id):
+        '''
+        ask a running event to stop; recorded PREEMPTED on return
+        '''
+```
+
+## RecordingLog
+
+This lives in the `learning` module: the recordings field's type -- a condition-signalled buffer of records, drained on use. Writers append (the recording dispatch); the one reader -- the harness -- consumes by `take()`: block for the next record, drain everything buffered. Draining is the hygiene: with a single consumer, the buffer never holds more than one decision interval's records. `snapshot()` is a non-consuming peek for tests and diagnostics, not a read path.

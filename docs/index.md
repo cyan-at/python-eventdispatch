@@ -26,9 +26,10 @@
     1. **[SimEvent](classes.md#simevent)**, an Event base class whose `dispatch` *quotes a duration* instead of occupying a thread, and whose `finish` is the completion step
     2. **[SimClockCSBQCVED](classes.md#simclockcsbqcved)**, a CSBQCVED whose dispatch schedules completions on the simulated clock and fires them in duration order: deterministic, faster than real time, no EventThreads. Engine adapters (MuJoCo, PyBullet, handwritten sims) override only `step_world`
 5. A **learning** python module, the surface learning / training code programs against:
-    1. **[TrainingEvent](classes.md#trainingevent)**, SimEvent whose finish records its completion on the board's completions field
-    2. **[TrainingDispatch](classes.md#trainingdispatch)**, SimClockCSBQCVED plus the completions field and clock settling at finish
-    3. Design notes: **[Training with CSWaits](training_cswait.md)** — decision points, the completions field, and CSWaits as tools the policy crafts itself; **[Training CSWaits: the architecture](training_cswait_arch.md)** — what learns, and how, split by credit horizon
+    1. **[RecordingEvent](classes.md#recordingevent)**, the Event base class that opts in to recording: a sibling of SimEvent, it runs on either clock
+    2. **[SimClockRecordingDispatch](classes.md#simclockrecordingdispatch)**, SimClockCSBQCVED plus the recordings field and guarded clock settling: training runs here
+    3. **[WallClockRecordingDispatch](classes.md#wallclockrecordingdispatch)**, CSBQCVED plus the recordings field: recording events run in real time on their own threads (inference, calibration on hardware)
+    4. Design notes: **[Training with CSWaits](training_cswait.md)** — decision points, the recordings field, and CSWaits as tools the policy crafts itself; **[Training CSWaits: the architecture](training_cswait_arch.md)** — what learns, and how, split by credit horizon
 
 Example programs, runnable after installing:
 
